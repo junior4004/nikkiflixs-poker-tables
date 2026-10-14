@@ -1,0 +1,15 @@
+{
+  "name": "Nikkiflixs Poker",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:20",
+  "forwardPorts": [
+    3001
+  ],
+  "portsAttributes": {
+    "3001": {
+      "label": "Poker table",
+      "onAutoForward": "notify"
+    }
+  },
+  "onCreateCommand": "npm install --include=dev && npm run build",
+  "postStartCommand": "if ! pgrep -f 'node' > /dev/null; then nohup npm start > /tmp/poker.log 2>&1 & fi; sleep 10; gh codespace ports visibility 3001:public -c \"$CODESPACE_NAME\" 2>&1 | head -5 || true"
+}
