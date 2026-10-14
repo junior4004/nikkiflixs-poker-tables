@@ -429,7 +429,7 @@
     if(toWinner){slidePotToWinner(Number(seat.getAttribute('data-index')),amount);return}
     var seatIndex=Number(seat.getAttribute('data-index'));postRoundBet(seatIndex,amount,'BET',true)
   }
-  var betPositions=[['50%','92%'],['24%','75%'],['17%','50%'],['22%','34%'],['50%','27%'],['76%','59%'],['83%','52%'],['76%','75%']],['34%','72%'],['34%','56%'],['34%','37%'],['46%','28%'],['66%','37%'],['66%','56%'],['66%','72%']];
+  var betPositions=[['50%','92%'],['24%','75%'],['17%','50%'],['22%','34%'],['50%','27%'],['76%','59%'],['83%','52%'],['76%','75%'],['34%','72%'],['34%','56%'],['34%','37%'],['46%','28%'],['66%','37%'],['66%','56%'],['66%','72%']];
   function updateBetPositions(){Array.prototype.forEach.call(document.querySelectorAll('.round-bet'),function(bet){var absolute=Number(bet.getAttribute('data-seat')),pos=betPositions[screenSlot(absolute)];bet.style.setProperty('--bx',pos[0]);bet.style.setProperty('--by',pos[1])})}
   updateBetPositions();
   function restoreName(index){var plate=seats[index].querySelector('.nameplate'),strong=plate.querySelector('strong');strong.textContent=names[index];plate.classList.remove('action-state','action-bet','action-raise','action-call','action-check','action-all-in','action-small-blind','action-big-blind')}
