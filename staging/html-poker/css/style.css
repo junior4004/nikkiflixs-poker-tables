@@ -1226,32 +1226,7 @@ body {
         padding: 3px 8px;
     }
 
-    /* Reposition seats for small screens */
-    .seat-0 {
-        bottom: -50px;
-    }
-
-    .seat-1 {
-        top: -50px;
-    }
-
-    .seat-2 {
-        left: -60px;
-    }
-
-    .seat-3 {
-        right: -60px;
-    }
-
-    .seat-4 {
-        bottom: -50px;
-        left: 20%;
-    }
-
-    .seat-5 {
-        bottom: -50px;
-        right: 20%;
-    }
+    /* Seats are container-bound (% of felt) - no fixed-px repositioning */
 }
 
 /* Phone portrait — all 6 seats stay visible and on-screen */
