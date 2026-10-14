@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+.env
+.env.local
+.env.*
+cloudflared.exe
+# Personal / local deployment config (do not commit credentials or hostnames)
+cloudflared-config.yml
+config.yml
+THAT
