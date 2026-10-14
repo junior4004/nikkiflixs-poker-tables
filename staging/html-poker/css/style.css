@@ -604,31 +604,31 @@ body {
     white-space: nowrap;
 }
 
-/* Bet chips: mapped to their seat, nudged toward table center (no fixed px) */
+/* Bet chips: toward table center, biased to one side so they never stack on the D/SB/BB (no fixed px) */
 .seat-0 .player-bet,
 .seat-4 .player-bet,
 .seat-5 .player-bet {
     bottom: 100%;
     left: 50%;
-    transform: translate(-50%, -20%);
+    transform: translate(-130%, -30%);
 }
 
 .seat-1 .player-bet {
     top: 100%;
     left: 50%;
-    transform: translate(-50%, 20%);
+    transform: translate(-130%, 30%);
 }
 
 .seat-2 .player-bet {
     left: 100%;
     top: 50%;
-    transform: translate(20%, -50%);
+    transform: translate(30%, -130%);
 }
 
 .seat-3 .player-bet {
     right: 100%;
     top: 50%;
-    transform: translate(-20%, -50%);
+    transform: translate(-30%, -130%);
 }
 
 /* Dealer Button */
@@ -647,31 +647,31 @@ body {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
-/* Dealer button: seat edge nearest table center (no fixed px) */
+/* Dealer/SB/BB button: toward table center, opposite side from the bet (no fixed px) */
 .seat-0 .dealer-button,
 .seat-4 .dealer-button,
 .seat-5 .dealer-button {
     top: 0;
     left: 50%;
-    transform: translate(-50%, -50%);
+    transform: translate(30%, -30%);
 }
 
 .seat-1 .dealer-button {
     bottom: 0;
     left: 50%;
-    transform: translate(-50%, 50%);
+    transform: translate(30%, 30%);
 }
 
 .seat-2 .dealer-button {
     right: 0;
     top: 50%;
-    transform: translate(50%, -50%);
+    transform: translate(30%, 30%);
 }
 
 .seat-3 .dealer-button {
     left: 0;
     top: 50%;
-    transform: translate(-50%, -50%);
+    transform: translate(-30%, 30%);
 }
 
 /* Turn Indicator */
