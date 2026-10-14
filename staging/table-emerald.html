@@ -365,7 +365,7 @@
   seats.forEach(function(seat){seat.querySelector('.pod').appendChild(seat.querySelector('.pocket'));var absolute=Number(seat.getAttribute('data-index'));seat.setAttribute('data-absolute-seat',absolute);seat.setAttribute('data-view-slot',screenSlot(absolute))});
   var betLayer=document.createElement('div');betLayer.className='bet-layer';betLayer.id='betLayer';betLayer.setAttribute('aria-label','Bets in front of each player');camera.appendChild(betLayer);
   seats.forEach(function(seat,index){var bet=document.createElement('div');bet.className='round-bet';bet.setAttribute('data-seat',index);bet.innerHTML='<span class="bet-stack" aria-hidden="true"><i></i><i></i><i></i></span><b class="bet-amount">$0</b>';betLayer.appendChild(bet)});
-  function fitCamera(){var r=stage.getBoundingClientRect(),baseW=560,baseH=700,fit=Math.min((r.width-6)/baseW,(r.height-8)/baseH);camera.style.setProperty('--scale',Math.max(.52,Math.min(1.05,fit)));camera.style.top='50%'}
+  function fitCamera(){var r=stage.getBoundingClientRect(),cw=camera.offsetWidth||560,ch=camera.offsetHeight||700,fit=Math.min((r.width-6)/cw,(r.height-8)/ch);camera.style.setProperty('--scale',Math.max(.45,Math.min(1.05,fit)));camera.style.top='50%'}
   addEventListener('resize',fitCamera);fitCamera();
   function later(ms,fn){var id=setTimeout(fn,Math.max(1,ms*gameSpeed));timers.push(id);return id}
   function logEvent(type,detail){auditLog.push({time:Date.now(),hand:handNumber,type:type,detail:detail||{}});if(auditLog.length>300)auditLog.shift()}
