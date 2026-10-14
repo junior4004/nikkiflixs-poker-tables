@@ -1,0 +1,15 @@
+# Render deployment config (Blueprint).
+# Usage: render.com → New → Blueprint → select this repo; the service is
+# created automatically.
+services:
+  - type: web
+    name: poker
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"

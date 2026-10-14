@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Texas Hold'em · Room Battle</title>
+    <script>
+      // Per-table theming hook: each casino table instance injects its own
+      // window.TABLE_CONFIG before this script (in its own index.html copy).
+      // Applies felt/rim colors, page title, default blinds, and a table badge.
+      (function () {
+        var c = window.TABLE_CONFIG || null;
+        if (!c) return;
+        try {
+          if (c.name) document.title = c.name + ' · Nikkiflixs Poker';
+          var rs = document.documentElement.style;
+          if (c.felt1) rs.setProperty('--felt-1', c.felt1);
+          if (c.felt2) rs.setProperty('--felt-2', c.felt2);
+          if (c.rim1) rs.setProperty('--rim-1', c.rim1);
+          if (c.rim2) rs.setProperty('--rim-2', c.rim2);
+        } catch (e) {}
+        document.addEventListener('DOMContentLoaded', function () {
+          try {
+            var b = document.createElement('div');
+            b.className = 'nikki-table-badge';
+            b.textContent = (c.name || 'Poker') + (c.stakes ? ' · ' + c.stakes : '');
+            document.body.appendChild(b);
+          } catch (e2) {}
+        });
+      })();
+    </script>
+    <style>
+      .nikki-table-badge {
+        position: fixed;
+        top: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 9999;
+        padding: 6px 18px;
+        border-radius: 999px;
+        background: rgba(8, 14, 12, 0.72);
+        border: 1px solid var(--gold, #f5c242);
+        color: var(--gold, #f5c242);
+        font: 600 13px/1.4 system-ui, sans-serif;
+        letter-spacing: 0.04em;
+        pointer-events: none;
+        white-space: nowrap;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
