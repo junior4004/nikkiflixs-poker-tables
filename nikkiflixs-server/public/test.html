@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Poker Server Test Client (Phase 1)</title>
+<style>
+  body { font-family: monospace; background: #0a3d1f; color: #fff; padding: 12px; }
+  #log { background: #000; border: 1px solid #2a7; height: 300px; overflow-y: auto; padding: 8px; font-size: 12px; }
+  button { margin: 4px; padding: 10px 18px; font-size: 16px; }
+  #seats { margin: 12px 0; }
+  .seat { border: 1px solid #2a7; padding: 6px; margin: 4px 0; }
+  .acting { border-color: #ff0; background: #332d00; }
+  #mycards { font-size: 28px; margin: 8px 0; }
+  #board { font-size: 28px; margin: 8px 0; }
+</style>
+</head>
+<body>
+<h2>🃏 Poker Server Test (Phase 1)</h2>
+<div>
+  <label>Table: <select id="table"><option value="emerald">emerald ($2/$5)</option><option value="red">red ($1/$2)</option></select></label>
+  <label>Name: <input id="name" value="Tester" size="10"></label>
+  <button id="joinBtn">Join</button>
+  <button id="leaveBtn">Leave</button>
+</div>
+<div id="mycards"></div>
+<div id="board"></div>
+<div id="pot"></div>
+<div id="seats"></div>
+<div>
+  <button id="foldBtn">Fold</button>
+  <button id="checkBtn">Check</button>
+  <button id="callBtn">Call</button>
+  <button id="raiseBtn">Raise +10</button>
+</div>
+<div id="log"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const log = (m) => { const el = document.getElementById('log'); el.innerHTML += m + '<br>'; el.scrollTop = el.scrollHeight; };
+const socket = io();
+let myToken = localStorage.getItem('poker_test_token') || null;
+
+const suitIcon = c => c.replace('s','♠').replace('h','♥').replace('d','♦').replace('c','♣');
+const red = c => (c.includes('♥')||c.includes('♦')) ? 'color:#f66' : 'color:#fff';
+
+socket.on('connect', () => log('✅ connected ' + socket.id));
+socket.on('joined', (m) => { myToken = m.token; localStorage.setItem('poker_test_token', m.token); log('✅ joined ' + m.table + ' as ' + m.token.slice(0,8)); });
+socket.on('room', (s) => render(s));
+socket.on('yourTurn', (m) => log('👉 YOUR TURN — legal: ' + m.legal.join(',')));
+socket.on('handStart', (m) => log('🂡 hand #' + m.hand + ' started'));
+socket.on('handEnd', (r) => log('🏆 handEnd: ' + r.winners.map(w => w.token.slice(0,6) + ' +' + w.amount + ' (' + w.hand + ')').join(' | ')));
+socket.on('action', (a) => log('▪ ' + a.token.slice(0,6) + ' ' + a.action + (a.amount ? ' ' + a.amount : '') + (a.to ? ' to ' + a.to : '')));
+socket.on('street', (s) => log('--- ' + s.street + ' ---'));
+socket.on('error', (e) => log('❌ ' + e.code + ': ' + e.msg));
+
+function render(s) {
+  document.getElementById('pot').textContent = 'POT: ' + s.pot + ' | state: ' + s.state;
+  const me = s.seats.find(x => !x.empty && x.hole && x.hole.length);
+  document.getElementById('mycards').innerHTML = me ? 'YOU: ' + me.hole.map(c => `<span style="${red(suitIcon(c))}">${suitIcon(c)}</span>`).join(' ') : '';
+  document.getElementById('board').innerHTML = 'BOARD: ' + s.board.map(c => `<span style="${red(suitIcon(c))}">${suitIcon(c)}</span>`).join(' ');
+  document.getElementById('seats').innerHTML = s.seats.map(x => x.empty ? '' :
+    `<div class="seat ${x.acting ? 'acting' : ''}">${x.dealer ? '🎯' : ''} ${x.name} — stack ${x.stack} bet ${x.bet}${x.folded ? ' FOLDED' : ''}${x.allIn ? ' ALL-IN' : ''}</div>`).join('');
+}
+
+document.getElementById('joinBtn').onclick = () => {
+  socket.emit('join', { table: document.getElementById('table').value, token: myToken, v: 1, name: document.getElementById('name').value });
+};
+document.getElementById('leaveBtn').onclick = () => socket.emit('leave');
+document.getElementById('foldBtn').onclick = () => socket.emit('fold');
+document.getElementById('checkBtn').onclick = () => socket.emit('check');
+document.getElementById('callBtn').onclick = () => socket.emit('call');
+document.getElementById('raiseBtn').onclick = () => socket.emit('raise', { amount: 10 });
+</script>
+</body>
+</html>
