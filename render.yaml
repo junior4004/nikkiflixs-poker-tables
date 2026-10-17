@@ -13,3 +13,15 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "20"
+  - type: web
+    name: nikkiflixs-poker-server
+    runtime: node
+    plan: starter
+    region: oregon
+    rootDir: nikkiflixs-server
+    buildCommand: npm install --omit=dev
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
