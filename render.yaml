@@ -16,7 +16,7 @@ services:
   - type: web
     name: nikkiflixs-poker-server
     runtime: node
-    plan: starter
+    plan: free
     region: oregon
     rootDir: nikkiflixs-server
     buildCommand: npm install --omit=dev
