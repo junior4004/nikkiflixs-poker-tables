@@ -1,7 +1,70 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Nikkiflixs Poker Server</title>
-<style>body{background:#0a0705;color:#f8f2df;font-family:sans-serif;text-align:center;padding:60px 20px}
-a{display:block;max-width:320px;margin:14px auto;padding:16px;border:1px solid #e2b34f;border-radius:10px;color:#ffe9b0;text-decoration:none;font-size:20px;background:#141009}</style></head>
-<body><h1>Nikkiflixs Poker</h1><p>Live multiplayer tables — pick one:</p>
-<a href="/emerald-node.html">Emerald Room ($2/$5)</a>
-<a href="/red-node.html">Red Room ($1/$2)</a></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Live Tables · Nikkiflixs Poker Club</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;font-family:"Source Sans 3",system-ui,sans-serif;background:#0a0705;color:#f8f2df}
+body{background:radial-gradient(ellipse at 50% -10%,#2a1608 0%,#0a0705 60%)}
+.wrap{max-width:640px;margin:0 auto;padding:18px 14px 60px}
+h1{font-family:"Barlow Condensed",system-ui,sans-serif;font-size:34px;letter-spacing:.06em;color:#f4d68d;margin:6px 0 2px;text-transform:uppercase}
+.sub{color:#c9bba5;font-size:14px;margin:0 0 18px}
+.card{background:#141009ee;border:1px solid #5e452a;border-radius:14px;padding:16px;margin-bottom:16px}
+.card .top{display:flex;align-items:center;gap:10px}
+.felt{width:22px;height:22px;border-radius:50%;flex:none;border:2px solid #0006}
+.felt.green{background:radial-gradient(circle at 35% 35%,#2f7a3d,#123f1e)}
+.felt.red{background:radial-gradient(circle at 35% 35%,#a83232,#4d1212)}
+.card h2{margin:0;font-size:22px;letter-spacing:.04em;text-transform:uppercase}
+.stakes{margin-left:auto;font-weight:800;color:#f5c65a;background:#070b0c;border:1px solid #7e5d28;border-radius:8px;padding:4px 10px;font-size:14px}
+.seats{margin:10px 0 6px;font-size:15px;color:#ffe9b0}
+.seats b{color:#f5c65a}
+.open{color:#9fc7ab;font-weight:700}
+.players{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 12px;min-height:28px}
+.chip{font-size:12.5px;background:#1a1510;border:1px solid #5e452a;border-radius:999px;padding:3px 10px;color:#e8dcc2}
+.join{display:block;text-align:center;min-height:52px;line-height:52px;border-radius:10px;border:1px solid #e2b34f;background:linear-gradient(180deg,#b8872d,#654216);color:#fff;font-weight:800;font-size:17px;letter-spacing:.06em;text-decoration:none}
+.join:active{transform:translateY(1px)}
+.live{display:inline-block;width:8px;height:8px;border-radius:50%;background:#57d977;margin-right:6px;animation:pulse 1.6s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.foot{text-align:center;color:#8a7a5a;font-size:12px;margin-top:10px}
+.err{text-align:center;color:#e08a8a;font-size:14px;padding:20px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1><span class="live"></span>Live Tables</h1>
+  <p class="sub">Real players, real cards — pick a table and take a seat.</p>
+  <div id="tables"><p class="sub">Loading tables…</p></div>
+  <p class="foot">Nikkiflixs Poker Club · tables refresh every few seconds</p>
+</div>
+<script>
+(function(){
+  'use strict';
+  function esc(s){return String(s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+  function render(tables){
+    var html = '';
+    tables.forEach(function(t){
+      var open = Math.max(0, t.displayOpen);
+      var chips = (t.players||[]).map(function(n){return '<span class="chip">'+esc(n)+'</span>';}).join('');
+      html += '<div class="card">'
+        + '<div class="top"><span class="felt '+esc(t.felt||'green')+'"></span>'
+        + '<h2>'+esc(t.name)+'</h2>'
+        + '<span class="stakes">'+esc(t.stakes)+'</span></div>'
+        + '<div class="seats"><b>'+t.filled+'/'+t.maxSeats+'</b> seated &nbsp;·&nbsp; <span class="open">'+open+' seat'+(open===1?'':'s')+' open!</span></div>'
+        + '<div class="players">'+chips+'</div>'
+        + '<a class="join" href="'+esc(t.page)+'">JOIN TABLE</a>'
+        + '</div>';
+    });
+    document.getElementById('tables').innerHTML = html || '<p class="err">No tables right now — check back soon.</p>';
+  }
+  function load(){
+    fetch('/api/tables',{cache:'no-store'}).then(function(r){return r.json();}).then(render)
+      .catch(function(){document.getElementById('tables').innerHTML='<p class="err">Could not reach the poker server. Retrying…</p>';});
+  }
+  load();
+  setInterval(load, 5000);
+})();
+</script>
+</body>
+</html>

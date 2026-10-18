@@ -52,7 +52,9 @@ class PokerEngine {
       betHand: 0,      // total bet this hand
       folded: false,
       allIn: false,
-      sittingOut: stack <= 0,
+      // Mid-hand joiners sit out until the next deal (standard poker room
+      // behavior) — a player with no cards must never reach a showdown.
+      sittingOut: stack <= 0 || this.state !== 'waiting',
     });
     this.seats[seat] = token;
     this.emit('playerJoin', { token, name, seat, stack });
@@ -102,14 +104,15 @@ class PokerEngine {
     this.potTotal = 0;
     this.lastResult = null;
 
-    // reset per-hand player state
+    // reset per-hand player state; funded players (including anyone who
+    // joined mid-hand last round) are back in
     for (const p of this.players.values()) {
       p.hole = [];
       p.betStreet = 0;
       p.betHand = 0;
       p.folded = false;
       p.allIn = p.stack <= 0;
-      if (p.stack <= 0) p.sittingOut = true;
+      p.sittingOut = p.stack <= 0;
     }
 
     // advance button to next player with chips
@@ -124,12 +127,15 @@ class PokerEngine {
 
     this.deck = shuffle(newDeck());
 
-    // deal 2 cards each, in seat order from button
-    const order = this.orderedTokens(this.dealerIndex);
+    // deal 2 cards each, in seat order from button (sitting-out players skip)
+    const order = this.orderedTokens(this.dealerIndex).filter(t => {
+      const p = this.players.get(t);
+      return p.stack > 0 && !p.sittingOut;
+    });
     for (let r = 0; r < 2; r++) {
       for (const t of order) {
         const p = this.players.get(t);
-        if (p.stack > 0) p.hole.push(this.deck.pop());
+        p.hole.push(this.deck.pop());
       }
     }
 
@@ -147,7 +153,7 @@ class PokerEngine {
     const bbSeat = this.players.get(bbToken).seat;
     this.toAct = this.orderedTokens(bbSeat).filter(t => {
       const p = this.players.get(t);
-      return p.stack > 0 && !p.allIn;
+      return p.stack > 0 && !p.allIn && !p.sittingOut;
     });
     this.advanceAction();
     this.emit('handStart', { hand: this.handNumber, dealer: this.dealerIndex });
@@ -169,7 +175,7 @@ class PokerEngine {
   legalActions(token) {
     if (this.state === 'waiting' || this.actingToken !== token) return [];
     const p = this.players.get(token);
-    if (!p || p.folded || p.allIn) return [];
+    if (!p || p.folded || p.allIn || p.sittingOut) return [];
     const toCall = this.currentBet - p.betStreet;
     const acts = ['fold'];
     if (toCall === 0) acts.push('check');
@@ -232,7 +238,7 @@ class PokerEngine {
           // everyone else must act again
           this.toAct = this.orderedTokens(p.seat).filter(t => {
             const q = this.players.get(t);
-            return t !== token && !q.folded && !q.allIn && q.stack >= 0;
+            return t !== token && q && !q.sittingOut && !q.folded && !q.allIn && q.stack >= 0;
           });
         }
       }
@@ -253,10 +259,10 @@ class PokerEngine {
   }
 
   checkStreetEnd() {
-    // remove folded/all-in from toAct defensively
+    // remove folded/all-in/sitting-out from toAct defensively
     this.toAct = this.toAct.filter(t => {
       const q = this.players.get(t);
-      return q && !q.folded && !q.allIn;
+      return q && !q.sittingOut && !q.folded && !q.allIn;
     });
     if (this.toAct.length === 0) {
       this.nextStreet();
@@ -310,7 +316,8 @@ class PokerEngine {
   showdown() {
     this.state = 'showdown';
     this.actingToken = null;
-    const inHand = [...this.players.values()].filter(p => !p.folded && !p.sittingOut);
+    // only players actually dealt in can contest the pot
+    const inHand = [...this.players.values()].filter(p => !p.folded && !p.sittingOut && p.hole.length === 2);
 
     // evaluate
     const scored = inHand.map(p => ({
@@ -319,20 +326,21 @@ class PokerEngine {
       betHand: p.betHand,
     }));
 
-    // build side pots from distinct bet levels (ascending)
-    const levels = [...new Set(scored.map(s => s.betHand))].sort((a, b) => a - b);
+    // build side pots from distinct bet levels (ascending).
+    // Every committed chip counts — including chips from players who folded.
+    // (Using only non-folded bet levels would strand folded players' chips.)
+    const contributors = [...this.players.values()].filter(p => !p.sittingOut && p.betHand > 0);
+    const levels = [...new Set(contributors.map(p => p.betHand))].sort((a, b) => a - b);
     const pots = [];
     let prev = 0;
     for (const lvl of levels) {
       const contrib = lvl - prev;
       if (contrib <= 0) continue;
-      const eligible = scored.filter(s => s.betHand >= lvl);
-      // count everyone (including folded) who contributed at this level
-      let n = 0;
-      for (const p of this.players.values()) {
-        if (!p.sittingOut && p.betHand >= lvl) n++;
-      }
-      pots.push({ amount: contrib * n, eligible: eligible.map(e => e.token) });
+      const atLevel = contributors.filter(p => p.betHand >= lvl);
+      pots.push({
+        amount: contrib * atLevel.length,
+        eligible: atLevel.filter(p => !p.folded).map(p => p.token),
+      });
       prev = lvl;
     }
 
@@ -432,6 +440,7 @@ class PokerEngine {
       v: 1, // protocol version — server rejects stale clients
       state: this.state,
       hand: this.handNumber,
+      maxSeats: this.maxPlayers, // lets clients hide unused seat positions
       board: this.board.map(cardToString),
       pot: this.potTotal,
       currentBet: this.currentBet,

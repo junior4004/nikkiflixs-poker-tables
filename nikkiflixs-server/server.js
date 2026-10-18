@@ -8,16 +8,42 @@ const http = require('http');
 const path = require('path');
 const { Server } = require('socket.io');
 const { RoomManager } = require('./roomManager');
+const { BotManager } = require('./bots');
 
 const PROTOCOL_V = 1;
 const PORT = process.env.PORT || 3000;
+// Bot action pacing (ms between bot actions). Lower for tests via env.
+const BOT_TICK_MS = parseInt(process.env.BOT_TICK_MS || '800', 10);
 
 const app = express();
 app.use(express.json());
 
+// ---- table config (data-driven; adding a table = one entry here) ----
+const TABLE_CONFIGS = [
+  { id: 'emerald', name: 'Emerald Room', stakes: '$2/$5', felt: 'green',
+    maxSeats: 8, displayOpen: 1, smallBlind: 2, bigBlind: 5,
+    startingStack: 1000, page: '/emerald-node.html' },
+  { id: 'red', name: 'Red Room', stakes: '$1/$2', felt: 'red',
+    maxSeats: 6, displayOpen: 2, smallBlind: 1, bigBlind: 2,
+    startingStack: 1000, page: '/red-node.html' },
+];
+
 // ---- health check (Render + uptime monitors) ----
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, v: PROTOCOL_V, tables: rooms.listTables(), uptime: process.uptime() });
+});
+
+// ---- lobby data: live table status.
+// Public-safe shape: names and counts only. Bot/human split is NEVER exposed.
+app.get('/api/tables', (req, res) => {
+  res.json(TABLE_CONFIGS.map(cfg => {
+    const s = bots.summary(cfg.id);
+    return {
+      id: s.id, name: s.name, stakes: s.stakes, felt: s.felt,
+      maxSeats: s.maxSeats, filled: s.filled, displayOpen: s.displayOpen,
+      page: s.page, players: s.players,
+    };
+  }));
 });
 
 // ---- static test client ----
@@ -27,9 +53,16 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
 const rooms = new RoomManager();
-// Phase 1 tables (mirrors the future emerald/red stakes)
-rooms.createTable('emerald', { smallBlind: 2, bigBlind: 5, maxPlayers: 8, startingStack: 1000 });
-rooms.createTable('red', { smallBlind: 1, bigBlind: 2, maxPlayers: 8, startingStack: 1000 });
+for (const cfg of TABLE_CONFIGS) {
+  rooms.createTable(cfg.id, {
+    smallBlind: cfg.smallBlind,
+    bigBlind: cfg.bigBlind,
+    maxPlayers: cfg.maxSeats,
+    startingStack: cfg.startingStack,
+  });
+}
+// House bots: fill tables so they always look alive; yield seats to humans.
+const bots = new BotManager(rooms, TABLE_CONFIGS);
 
 // broadcast a full personalized state to every attached socket at a table
 function broadcastState(tableId) {
@@ -44,6 +77,8 @@ function broadcastState(tableId) {
 function syncTable(tableId) {
   const room = rooms.getTable(tableId);
   if (!room) return;
+  // keep bot counts right on every join/leave/action (idempotent)
+  bots.reconcile(tableId);
   const events = room.engine.drainEvents();
   for (const ev of events) {
     if (ev.type === 'turn' && ev.token) {
@@ -87,9 +122,12 @@ io.on('connection', (socket) => {
 
     const isNew = !room.engine.players.has(token);
     if (isNew) {
-      const seat = room.engine.addPlayer(token, msg.name || 'Player', msg.buyIn);
+      // Seat the human; if the table is physically full of bots, one bot
+      // yields its seat first (everyone inside sees one leave, one arrive).
+      // Genuinely full of humans -> clean table-full error.
+      const seat = bots.seatHuman(tableId, token, msg.name || 'Player', msg.buyIn);
       if (seat < 0) {
-        socket.emit('error', { code: 'table-full', msg: 'Table is full.' });
+        socket.emit('error', { code: 'table-full', msg: 'Table is full. Try another table.' });
         tableId = null; token = null;
         return;
       }
@@ -150,6 +188,22 @@ io.on('connection', (socket) => {
 // sweep disconnected players every 30s
 setInterval(() => rooms.sweep(), 30000);
 
+// bot loop: seat bots at boot, act bot turns on a human-like cadence,
+// and kick off hands on bot-only tables (no sockets to trigger syncTable).
+for (const cfg of TABLE_CONFIGS) bots.reconcile(cfg.id);
+setInterval(() => {
+  for (const cfg of TABLE_CONFIGS) {
+    const room = rooms.getTable(cfg.id);
+    if (!room) continue;
+    if (bots.tickTable(cfg.id)) {
+      syncTable(cfg.id);
+    } else if (room.engine.state === 'waiting' && room.engine.canStartHand()) {
+      room.engine.startHand();
+      syncTable(cfg.id);
+    }
+  }
+}, BOT_TICK_MS);
+
 // graceful shutdown (Render SIGTERM)
 process.on('SIGTERM', () => {
   console.log('SIGTERM — draining...');
@@ -162,4 +216,4 @@ server.listen(PORT, () => {
   console.log('Tables:', rooms.listTables().map(t => t.id).join(', '));
 });
 
-module.exports = { app, io, rooms, syncTable, broadcastState, PROTOCOL_V };
+module.exports = { app, io, rooms, syncTable, broadcastState, PROTOCOL_V, bots, TABLE_CONFIGS };

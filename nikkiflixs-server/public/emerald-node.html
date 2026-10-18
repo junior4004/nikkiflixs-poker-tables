@@ -1284,6 +1284,9 @@ return '<svg width="92" height="92" viewBox="0 0 92 92"><path d="M45 16 C61 14 7
 var PROTOCOL_V = 1;
 var SERVER_URL = window.__POKER_SERVER_URL__ || ''; // same-origin by default
 
+// Hide unused seat positions (6-max tables on 8-seat layouts look intentional)
+(function(){var st=document.createElement('style');st.textContent='.seat-unused{display:none!important}';document.head.appendChild(st);})();
+
 var SUIT_MAP = { s: '\u2660', h: '\u2665', d: '\u2666', c: '\u2663' }; // ♠♥♦♣
 
 function parseCard(str) {
@@ -1326,8 +1329,10 @@ function renderState(state) {
   var seats = bridge.seats;
 
   // --- seats ---
+  var usedVisuals = {}; // view slots the server actually uses this render
   state.seats.forEach(function(s) {
     var visual = bridge.screenSlot(s.seat);
+    usedVisuals[visual] = true;
     var el = seats[visual];
     if (!el) return;
 
@@ -1397,6 +1402,12 @@ function renderState(state) {
       });
     }
   });
+
+  // Hide seat positions the server doesn't use (e.g. 6-max on an 8-seat
+  // layout). Recomputed every render so perspective changes stay correct.
+  for (var vi = 0; vi < seats.length; vi++) {
+    if (seats[vi]) seats[vi].classList.toggle('seat-unused', !usedVisuals[vi]);
+  }
 
   // --- board ---
   var boardEls = document.querySelectorAll('.board-card');
