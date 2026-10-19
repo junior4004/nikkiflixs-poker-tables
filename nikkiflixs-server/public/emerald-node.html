@@ -284,7 +284,8 @@
     setBlinds: (typeof setBlinds !== 'undefined') ? setBlinds : null,
     setPendingUser: function(cb){ try { pendingUser = cb; } catch(e){} },
     setPendingRaiseState: function(s){ try { pendingRaiseState = s; } catch(e){} },
-    getLocalSeat: function(){ try { return localSeatAbsolute; } catch(e){ return 0; } }
+    getLocalSeat: function(){ try { return localSeatAbsolute; } catch(e){ return 0; } },
+    slidePotToWinnerNode: function(visual, amount, name){ nodeSlidePotToWinner(visual, amount, name); }
   };
 
   function screenSlot(absoluteSeat){return(absoluteSeat-localSeatAbsolute+8)%8}
@@ -460,7 +461,34 @@
     later(930,function(){potChips.style.opacity=pot>0?'1':'0';active.forEach(function(bet){bet.classList.remove('show','collecting')});roundBetTotals=[0,0,0,0,0,0,0,0];logEvent('street-bets-collected',{pot:pot});if(done)done()})
   }
   function slidePotToWinner(index,amount){
-    var from=point(potChips),to=point(seats[index].querySelector('.seat-chips')),flight=document.createElement('div');flight.className='pot-flight';flight.style.left=from.x+'px';flight.style.top=from.y+'px';flight.style.setProperty('--dx',(to.x-from.x)+'px');flight.style.setProperty('--dy',(to.y-from.y)+'px');playSfx('chip-click',.55);flight.innerHTML='<span class="bet-stack"><i></i><i></i><i></i><i></i></span><b class="bet-amount">POT '+money(amount)+' → '+names[index]+'</b>';motion.appendChild(flight);potChips.style.opacity='0';logEvent('pot-slide-started',{seat:index,name:names[index],amount:amount});flight.addEventListener('animationend',function(){setStack(index,stacks[index]+amount);flight.remove();logEvent('pot-slide-arrived',{seat:index,name:names[index],amount:amount,stack:stacks[index]})})
+    var from=point(potChips),to=point(seats[index].querySelector('.seat-chips')),flight=document.createElement('div');flight.className='pot-flight';flight.style.left=from.x+'px';flight.style.top=from.y+'px';flight.style.setProperty('--dx',(to.x-from.x)+'px');flight.style.setProperty('--dy',(to.y-from.y)+'px');playSfx('chip-click',.55);flight.innerHTML='<span class=\"bet-stack\"><i></i><i></i><i></i><i></i></span><b class=\"bet-amount\">POT '+money(amount)+' → '+names[index]+'</b>';motion.appendChild(flight);potChips.style.opacity='0';logEvent('pot-slide-started',{seat:index,name:names[index],amount:amount});flight.addEventListener('animationend',function(){setStack(index,stacks[index]+amount);flight.remove();logEvent('pot-slide-arrived',{seat:index,name:names[index],amount:amount,stack:stacks[index]})})
+  }
+  /* Node-mode payout flight: same pot-flight visuals as slidePotToWinner,
+     but the server owns chip accounting — no local names[]/stacks[]
+     bookkeeping (those arrays are stale in Node mode). Exposed on the
+     __nodeBridge so the Socket.IO adapter can animate handEnd payouts. */
+  function nodeSlidePotToWinner(visualIndex, amount, displayName){
+    var el = seats[visualIndex];
+    if (!el) return;
+    var from = point(potChips), to = point(el.querySelector('.seat-chips'));
+    var flight = document.createElement('div');
+    flight.className = 'pot-flight';
+    flight.style.left = from.x + 'px';
+    flight.style.top = from.y + 'px';
+    flight.style.setProperty('--dx', (to.x - from.x) + 'px');
+    flight.style.setProperty('--dy', (to.y - from.y) + 'px');
+    if (typeof playSfx === 'function') playSfx('chip-click', .55);
+    var label = 'POT ' + money(amount) + (displayName ? ' → ' + displayName : '');
+    flight.innerHTML = '<span class="bet-stack"><i></i><i></i><i></i><i></i></span><b class="bet-amount">' + label + '</b>';
+    motion.appendChild(flight);
+    potChips.style.opacity = '0';
+    logEvent('pot-slide-started', { seat: visualIndex, name: displayName, amount: amount, nodeMode: true });
+    flight.addEventListener('animationend', function(){
+      flight.remove();
+      // chips have landed — the middle stack shows again for the next hand
+      potChips.style.opacity = '1';
+      logEvent('pot-slide-arrived', { seat: visualIndex, name: displayName, amount: amount, nodeMode: true });
+    });
   }
   function foldCards(seat,onDone){var target=point(muck),cards=Array.prototype.slice.call(seat.querySelectorAll('.hole'));muck.classList.add('show');playSfx('card-muck',.5);cards.forEach(function(source,n){var from=point(source),card=document.createElement('i');card.className='fold-card';card.style.left=(from.x-16)+'px';card.style.top=(from.y-23)+'px';card.style.setProperty('--dx',(target.x-from.x+(n?5:-5))+'px');card.style.setProperty('--dy',(target.y-from.y)+'px');motion.appendChild(card);source.style.opacity='0';card.addEventListener('animationend',function(){card.remove()})});later(780,function(){seat.classList.add('folded');later(360,function(){muck.classList.remove('show')});if(onDone)onDone()})}
   /* Screen coordinates are viewer-relative; game positions below stay absolute. Every disc has a dedicated clear lane between the rail and that player's bet. */
@@ -1600,6 +1628,16 @@ function connect(tableId) {
       if (bridge && bridge.statusMain) {
         var w = (result.winners || []).map(function(x) { return '$' + x.amount; }).join(', ');
         bridge.statusMain.textContent = 'HAND ' + result.hand + ' COMPLETE \u00B7 ' + w;
+      }
+      // fly the pot chips to each winner's seat (server seat -> visual slot)
+      if (bridge && bridge.slidePotToWinnerNode && result.winners && result.winners.length) {
+        result.winners.forEach(function(win, i) {
+          if (typeof win.seat !== 'number') return;
+          var visual = bridge.screenSlot(win.seat);
+          setTimeout(function() {
+            bridge.slidePotToWinnerNode(visual, win.amount, win.name || '');
+          }, i * 350);
+        });
       }
       // reveal winner cards at showdown
       if (result.showdown) {

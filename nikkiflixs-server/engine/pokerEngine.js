@@ -361,9 +361,14 @@ class PokerEngine {
         if (remainder > 0) { amt++; remainder--; }
         const p = this.players.get(w.token);
         p.stack += amt;
-        winners.push({ token: w.token, amount: amt, hand: w.result.name });
+        winners.push({ token: w.token, seat: p.seat, name: p.name, amount: amt, hand: w.result.name });
       }
     }
+
+    // Pot is paid out — clear it so the middle reads empty until next hand.
+    // (Only startHand used to reset potTotal; the handEnd broadcast in between
+    // kept painting the old pot in the middle.)
+    this.potTotal = 0;
 
     // players with 0 stack sit out next hand
     for (const p of this.players.values()) {
@@ -396,12 +401,15 @@ class PokerEngine {
     // everyone else folded; winner takes the whole pot (no reveal needed,
     // but we include it for the test client)
     const w = this.players.get(winnerToken);
-    w.stack += this.potTotal;
+    const potWon = this.potTotal;
+    w.stack += potWon;
+    // Pot is paid out — clear it so the middle reads empty until next hand.
+    this.potTotal = 0;
     const p = this.players.get(winnerToken);
     this.lastResult = {
       hand: this.handNumber,
       board: this.board.map(cardToString),
-      winners: [{ token: winnerToken, amount: this.potTotal, hand: byFold ? 'by fold' : p.hole.map(cardToString).join(' ') }],
+      winners: [{ token: winnerToken, seat: w.seat, name: w.name, amount: potWon, hand: byFold ? 'by fold' : p.hole.map(cardToString).join(' ') }],
       showdown: [],
       wonByFold: !!byFold,
     };

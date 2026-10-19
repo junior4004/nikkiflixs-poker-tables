@@ -259,6 +259,19 @@ class BotManager {
     // forget tokens for players already gone (defensive; stays consistent)
     for (const t of [...bt]) if (!eng.players.has(t)) bt.delete(t);
 
+    // Starvation guard: a broke bot (stack 0, sitting out) can never rejoin
+    // on its own — startHand only unsits funded players — so without this a
+    // bot-only table eventually parks in `waiting` forever and no more hands
+    // are dealt. Rebuy it in place: same seat, same name, fresh starting
+    // stack. Invisible to everyone (play chips only), and the table can
+    // never permanently stall. Humans are never touched here.
+    for (const [token, p] of eng.players) {
+      if (bt.has(token) && p.stack <= 0 && p.sittingOut) {
+        p.stack = eng.startingStack;
+        p.sittingOut = false;
+      }
+    }
+
     let { bots } = this.counts(tableId);
     const target = this.targetBots(tableId);
 
