@@ -207,22 +207,28 @@ io.on('connection', (socket) => {
     token = msg.token || rooms.newToken();
 
     const isNew = !room.engine.players.has(token);
+    let joinedSeat = -1;
     if (isNew) {
       // Seat the human; if the table is physically full of bots, one bot
       // yields its seat first (everyone inside sees one leave, one arrive).
       // Genuinely full of humans -> clean table-full error.
       // A tapped chair (msg.seat) is honored when a bot holds it.
-      const seat = bots.seatHuman(tableId, token, msg.name || 'Player', msg.buyIn, msg.seat);
-      if (seat < 0) {
+      // The seat seatHuman returns is AUTHORITATIVE — it is what 'joined'
+      // reports back, never a second lookup that could disagree.
+      joinedSeat = bots.seatHuman(tableId, token, msg.name || 'Player', msg.buyIn, msg.seat);
+      if (joinedSeat < 0) {
         socket.emit('error', { code: 'table-full', msg: 'Table is full. Try another table.' });
         tableId = null; token = null;
         return;
       }
+    } else {
+      const jp0 = room.engine.players.get(token);
+      joinedSeat = jp0 ? jp0.seat : -1;
     }
     rooms.attach(tableId, token, socket.id);
     socket.join(tableId);
     const jp = room.engine.players.get(token);
-    socket.emit('joined', { token, table: tableId, seat: jp ? jp.seat : -1 });
+    socket.emit('joined', { token, table: tableId, seat: joinedSeat });
     // send this player their personalized state immediately
     socket.emit('room', room.engine.getState(token));
     // let everyone else know the lineup changed
