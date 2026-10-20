@@ -345,13 +345,19 @@ class BotManager {
 
   // Seat a human with yield fallback. Returns seat index, or -1 when the
   // table is genuinely full of humans (caller sends a clean table-full error).
-  seatHuman(tableId, token, name, buyIn) {
+  // wantSeat: the chair the human tapped. A bot sitting there yields it.
+  seatHuman(tableId, token, name, buyIn, wantSeat) {
     const room = this.rooms.getTable(tableId);
     if (!room) return -1;
-    let seat = room.engine.addPlayer(token, name, buyIn);
+    const eng = room.engine;
+    if (Number.isInteger(wantSeat) && wantSeat >= 0 && wantSeat < eng.seats.length) {
+      const occupant = eng.seats[wantSeat];
+      if (occupant && this.isBot(tableId, occupant)) this.removeBot(tableId, occupant);
+    }
+    let seat = eng.addPlayer(token, name, buyIn, wantSeat);
     if (seat >= 0) return seat;
     if (!this.yieldForHuman(tableId)) return -1;
-    return room.engine.addPlayer(token, name, buyIn);
+    return eng.addPlayer(token, name, buyIn, wantSeat);
   }
 
   // One bot action per call (called on a timer; pacing looks human).

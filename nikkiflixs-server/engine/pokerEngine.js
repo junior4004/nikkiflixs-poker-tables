@@ -37,10 +37,16 @@ class PokerEngine {
   }
 
   // ---------- player management ----------
-  addPlayer(token, name, buyIn) {
+  addPlayer(token, name, buyIn, wantSeat) {
     if (this.players.has(token)) return this.seats.indexOf(token);
     if (this.seats.every(s => s !== null)) return -1; // full
-    const seat = this.seats.findIndex(s => s === null);
+    // Honor a tapped chair when it's free; otherwise first free seat.
+    let seat = -1;
+    if (Number.isInteger(wantSeat) && wantSeat >= 0 && wantSeat < this.seats.length && this.seats[wantSeat] === null) {
+      seat = wantSeat;
+    } else {
+      seat = this.seats.findIndex(s => s === null);
+    }
     const stack = Math.max(0, buyIn || this.startingStack);
     this.players.set(token, {
       token,
