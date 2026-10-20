@@ -64,6 +64,12 @@ async function main() {
 
   check('joined event has a real seat', Number.isInteger(J.seat) && J.seat >= 0 && J.seat < 6, 'seat=' + J.seat);
 
+  // desync self-heal data: spectator probe saw yourSeat=-1; our joined
+  // states must report yourSeat === our seat on every update.
+  check('spectator state reports yourSeat=-1', !!probe && probe.yourSeat === -1, 'yourSeat=' + (probe && probe.yourSeat));
+  const myState = J.states[J.states.length - 1];
+  check('seated state reports yourSeat = my seat', !!myState && myState.yourSeat === J.seat, 'yourSeat=' + (myState && myState.yourSeat) + ' seat=' + J.seat);
+
   // The FIRST room event is sent synchronously inside the join handler,
   // BEFORE syncTable can start a new hand. That is the truth at join time.
   const firstState = J.states[0];

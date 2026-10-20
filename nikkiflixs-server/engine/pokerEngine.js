@@ -471,6 +471,9 @@ class PokerEngine {
       minRaiseTo: me && this.actingToken === forToken ? this.minRaiseTo(forToken) : null,
       maxRaiseTo: me && this.actingToken === forToken ? this.maxRaiseTo(forToken) : null,
       lastResult: this.lastResult,
+      // authoritative seat for the requester (-1 = not seated). Clients
+      // MUST trust this over their local mySeat to self-heal desync.
+      yourSeat: me ? me.seat : -1,
     };
   }
 
