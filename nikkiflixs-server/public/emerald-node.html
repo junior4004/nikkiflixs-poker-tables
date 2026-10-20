@@ -154,7 +154,11 @@
     .seat[data-view-slot="0"] .pocket .hole+.hole,.seat[data-view-slot="4"] .pocket .hole+.hole{margin-left:0}
     .seat.folded .pocket{display:none!important}
     @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;transition-duration:.001ms!important}}
-  </style>
+  /* BUILD 151 parity: felt wordmark */
+.brand{transform:translate(-50%,-50%) rotate(-32deg);display:flex;flex-direction:column;align-items:center;gap:12px}
+.brand-name{font:400 132px/.8 "Great Vibes Local",cursive;color:#f6d36f;text-shadow:0 3px 4px #41000b,0 0 16px rgba(255,211,97,.55);white-space:nowrap}
+.brand-sub{font:700 20px/1 "Barlow Condensed",sans-serif;letter-spacing:.34em;color:#e8c987;text-transform:uppercase;text-shadow:0 2px 5px rgba(0,0,0,.65);white-space:nowrap}
+</style>
 <style>#nl-badge-frame{display:none!important;visibility:hidden!important;pointer-events:none!important;}</style>
 
 <style>
@@ -218,7 +222,7 @@
   </header>
   <section class="stage" id="stage" aria-label="One wide camera view of the whole poker table">
     <div class="camera" id="camera">
-      <div class="table"><div class="brand">Nikkiflixs</div></div>
+      <div class="table"><div class="brand"><span class="brand-name">Nikkiflixs</span><span class="brand-sub">Theater and Poker Room · Est. 2026</span></div></div>
       <div class="table-markers" aria-label="Rotating dealer and blind positions"><span class="marker-group" id="dealerMarker"><i class="felt-marker dealer-disc show">D</i></span><span class="marker-group" id="sbMarker"><i class="felt-marker show">SB</i></span><span class="marker-group" id="bbMarker"><i class="felt-marker show">BB</i></span></div>
       <div class="dealer" aria-label="Nikki, permanent dealer"><img src="https://nikkiflixs.com/assets/rooms/poker/assets/nikki.png" alt="Nikki, the dealer, in a black uniform with gold trim"><span class="dealer-name">Nikki · Dealer</span></div>
       <div class="deck" id="deck" aria-label="Deck being shuffled"><i></i><i></i><i></i></div>
