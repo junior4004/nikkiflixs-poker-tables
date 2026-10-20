@@ -1,8 +1,9 @@
 'use strict';
 /* Nikkiflixs accounts — signup / login / sessions.
    Passwords: scrypt (Node built-in), salted, never stored or logged in plain text.
-   Store: one JSON file in DATA_DIR (attach a persistent disk in production,
-   otherwise accounts reset when the service restarts/redeploys).
+   Store: Postgres when DATABASE_URL is set (production: free Neon database —
+   accounts live OUTSIDE Render, so they survive every restart/redeploy/sleep).
+   Without DATABASE_URL it falls back to one JSON file in DATA_DIR (local dev).
    The account whose username matches CREATOR_USERNAME (env, default 'thecreator')
    gets role 'creator' — server-side recognition on any device.
 */
@@ -14,8 +15,23 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const STORE_PATH = path.join(DATA_DIR, 'accounts.json');
 const CREATOR_USERNAME = (process.env.CREATOR_USERNAME || 'thecreator').toLowerCase();
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const USE_PG = !!process.env.DATABASE_URL;
 
-function loadStore() {
+/* ---------- storage: Postgres (Neon) or JSON file ---------- */
+let pool = null;
+if (USE_PG) {
+  const { Pool } = require('pg');
+  pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    max: 2,
+    idleTimeoutMillis: 10000,
+    connectionTimeoutMillis: 8000,
+    ssl: { rejectUnauthorized: false }
+  });
+  pool.on('error', (e) => console.error('accounts: pg pool error:', e.message));
+}
+
+function loadStoreFile() {
   try {
     const raw = fs.readFileSync(STORE_PATH, 'utf8');
     const data = JSON.parse(raw);
@@ -24,12 +40,43 @@ function loadStore() {
   return { users: [], sessions: {} };
 }
 
-let store = loadStore();
+let store = USE_PG ? { users: [], sessions: {} } : loadStoreFile();
+let dbReady = !USE_PG;
+let dbInitPromise = null;
+
+function ensureReady() {
+  if (!USE_PG) return Promise.resolve();
+  if (dbReady) return Promise.resolve();
+  if (!dbInitPromise) {
+    dbInitPromise = (async () => {
+      await pool.query('CREATE TABLE IF NOT EXISTS nf_kv (k TEXT PRIMARY KEY, v JSONB NOT NULL)');
+      const r = await pool.query("SELECT v FROM nf_kv WHERE k = 'accounts'");
+      if (r.rows.length && r.rows[0].v && Array.isArray(r.rows[0].v.users) && r.rows[0].v.sessions) {
+        store = r.rows[0].v;
+      }
+      dbReady = true;
+      console.log('accounts: postgres store ready, users:', store.users.length);
+    })().catch((e) => {
+      dbInitPromise = null;
+      console.error('accounts: postgres init failed:', e.message);
+      throw e;
+    });
+  }
+  return dbInitPromise;
+}
+
 let saveTimer = null;
 function saveStore() {
   if (saveTimer) return;
   saveTimer = setTimeout(() => {
     saveTimer = null;
+    if (USE_PG) {
+      pool.query(
+        "INSERT INTO nf_kv (k, v) VALUES ('accounts', $1::jsonb) ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v",
+        [JSON.stringify(store)]
+      ).catch((e) => console.error('accounts: pg save failed:', e.message));
+      return;
+    }
     try {
       fs.mkdirSync(DATA_DIR, { recursive: true });
       const tmp = STORE_PATH + '.tmp';
@@ -120,6 +167,7 @@ function registerAccountRoutes(app) {
 
   app.post('/api/signup', async (req, res) => {
     try {
+      await ensureReady();
       const { username, password } = req.body || {};
       if (!USERNAME_RE.test(String(username || ''))) {
         return res.status(400).json({ error: 'Username must be 3-20 letters, numbers or underscores.' });
@@ -149,6 +197,7 @@ function registerAccountRoutes(app) {
   });
 
   app.post('/api/login', async (req, res) => {
+    try { await ensureReady(); } catch (e) { return res.status(503).json({ error: 'Accounts are waking up — try again in a few seconds.' }); }
     const { username, password } = req.body || {};
     const key = (req.ip || '') + '|' + String(username || '').toLowerCase();
     if (throttled(key)) return res.status(429).json({ error: 'Too many tries — wait a minute.' });
@@ -166,20 +215,23 @@ function registerAccountRoutes(app) {
     return h.startsWith('Bearer ') ? h.slice(7) : null;
   }
 
-  app.get('/api/me', (req, res) => {
+  app.get('/api/me', async (req, res) => {
+    try { await ensureReady(); } catch (e) { return res.status(503).json({ error: 'Accounts are waking up — try again in a few seconds.' }); }
     const u = userForToken(bearer(req));
     if (!u) return res.status(401).json({ error: 'Not signed in.' });
     res.json(publicUser(u));
   });
 
-  app.post('/api/logout', (req, res) => {
+  app.post('/api/logout', async (req, res) => {
+    try { await ensureReady(); } catch (e) { /* logout stays a no-op success */ }
     const t = bearer(req);
     if (t) { delete store.sessions[tokenKey(t)]; saveStore(); }
     res.json({ ok: true });
   });
 
-  app.get('/api/accounts/health', (req, res) => {
-    res.json({ ok: true, users: store.users.length, creatorUsername: CREATOR_USERNAME });
+  app.get('/api/accounts/health', async (req, res) => {
+    try { await ensureReady(); } catch (e) { /* report not-ready below */ }
+    res.json({ ok: true, users: store.users.length, creatorUsername: CREATOR_USERNAME, storage: USE_PG ? 'postgres' : 'file', dbReady });
   });
 }
 
