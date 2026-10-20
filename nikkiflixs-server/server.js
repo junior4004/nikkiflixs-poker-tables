@@ -185,7 +185,8 @@ io.on('connection', (socket) => {
     token = msg.token;
     rooms.attach(tableId, token, socket.id);
     socket.join(tableId);
-    socket.emit('joined', { token, table: tableId, resumed: true });
+    const rp = room.engine.players.get(token);
+    socket.emit('joined', { token, table: tableId, resumed: true, seat: rp ? rp.seat : -1 });
     socket.emit('room', room.engine.getState(token));
     broadcastState(tableId);
   });
@@ -220,7 +221,8 @@ io.on('connection', (socket) => {
     }
     rooms.attach(tableId, token, socket.id);
     socket.join(tableId);
-    socket.emit('joined', { token, table: tableId });
+    const jp = room.engine.players.get(token);
+    socket.emit('joined', { token, table: tableId, seat: jp ? jp.seat : -1 });
     // send this player their personalized state immediately
     socket.emit('room', room.engine.getState(token));
     // let everyone else know the lineup changed
