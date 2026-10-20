@@ -24,7 +24,7 @@ const TABLE_CONFIGS = [
     maxSeats: 8, displayOpen: 1, smallBlind: 2, bigBlind: 5,
     startingStack: 1000, page: '/emerald-node.html' },
   { id: 'red', name: 'Red Room', stakes: '$1/$2', felt: 'red',
-    maxSeats: 6, displayOpen: 2, smallBlind: 1, bigBlind: 2,
+    maxSeats: 8, displayOpen: 2, smallBlind: 1, bigBlind: 2,
     startingStack: 1000, page: '/red-node.html' },
 ];
 
