@@ -278,6 +278,13 @@ class PokerEngine {
   }
 
   advanceAction() {
+    // Hard stop: a sitting-out, folded, or all-in player can NEVER hold the
+    // turn. Skip them defensively even if toAct was built wrong.
+    while (this.toAct.length > 0) {
+      const q = this.players.get(this.toAct[0]);
+      if (q && !q.sittingOut && !q.folded && !q.allIn) break;
+      this.toAct.shift();
+    }
     this.actingToken = this.toAct[0] || null;
     if (this.actingToken) {
       this.emit('turn', { token: this.actingToken, legal: this.legalActions(this.actingToken) });
