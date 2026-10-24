@@ -60,15 +60,22 @@ class RoomManager {
   }
 
   // Remove players whose socket is gone past the grace period.
-  // Called on a timer; does NOT remove players mid-hand (engine folds them).
+  // BUILD 269 fixup: the old code only removed a player when the table
+  // happened to be 'waiting' at a sweep tick, but deleted the lastSeen
+  // entry either way — so a player who disconnected mid-hand was never
+  // retried and haunted the seat forever, and busy tables (bots always
+  // playing) filled with ghosts until new humans got 'table-full'
+  // (proven locally: the red table filled with test ghosts in ~30 min).
+  // engine.removePlayer is already mid-hand safe (folds, filters toAct,
+  // checkStreetEnd) and the explicit 'leave' path already calls it
+  // mid-hand, so sweep now removes past-grace players unconditionally
+  // and only clears lastSeen when actually removed.
   sweep() {
     const now = Date.now();
     for (const room of this.tables.values()) {
       for (const [token, ts] of room.lastSeen) {
         if (!room.sockets.has(token) && now - ts > GRACE_MS) {
-          if (room.engine.state === 'waiting') {
-            room.engine.removePlayer(token);
-          }
+          room.engine.removePlayer(token);
           room.lastSeen.delete(token);
         }
       }
