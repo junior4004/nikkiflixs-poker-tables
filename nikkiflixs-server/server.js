@@ -285,6 +285,34 @@ io.on('connection', (socket) => {
     if (!res.ok) socket.emit('error', { code: res.error, msg: 'Action rejected.', min: res.min });
     syncTable(tableId);
   });
+  // ---- Table voice relay (WebRTC signaling) ----
+  // Session-authenticated by construction: the sender's identity comes
+  // from THIS socket's join/resume (the tableId/token closure), never
+  // from the message body, and the sender must actually hold a seat at
+  // the table. Payloads go only to the socket holding the target seat
+  // (bots / empty seats have no socket and are silently skipped).
+  function relayVoice(kind, msg = {}) {
+    if (!tableId || !token) return;
+    const room = rooms.getTable(tableId);
+    if (!room) return;
+    const me = room.engine.players.get(token);
+    if (!me) return;
+    const toSeat = msg.toSeat;
+    if (!Number.isInteger(toSeat) || toSeat < 0 || toSeat >= room.engine.seats.length) return;
+    if (toSeat === me.seat) return;
+    const targetToken = room.engine.seats[toSeat];
+    if (!targetToken) return;
+    const sid = room.sockets.get(targetToken);
+    if (!sid) return;
+    const out = { fromSeat: me.seat };
+    if (kind === 'voice:candidate') out.candidate = msg.candidate;
+    else out.sdp = msg.sdp;
+    io.to(sid).emit(kind, out);
+  }
+  socket.on('voice:offer', (msg) => relayVoice('voice:offer', msg));
+  socket.on('voice:answer', (msg) => relayVoice('voice:answer', msg));
+  socket.on('voice:candidate', (msg) => relayVoice('voice:candidate', msg));
+
   socket.on('leave', () => {
     const r = tableId && rooms.getTable(tableId);
     if (r) { r.engine.removePlayer(token); rooms.detachBySocket(socket.id); syncTable(tableId); }
