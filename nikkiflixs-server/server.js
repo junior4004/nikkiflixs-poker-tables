@@ -10,6 +10,7 @@ const { Server } = require('socket.io');
 const { RoomManager } = require('./roomManager');
 const { BotManager } = require('./bots');
 const { registerAccountRoutes } = require('./accounts');
+const { registerHandLogRoutes } = require('./handlog');
 
 const PROTOCOL_V = 1;
 const PORT = process.env.PORT || 3000;
@@ -19,6 +20,7 @@ const BOT_TICK_MS = parseInt(process.env.BOT_TICK_MS || '800', 10);
 const app = express();
 app.use(express.json());
 registerAccountRoutes(app);
+registerHandLogRoutes(app);
 
 // ---- table config (data-driven; adding a table = one entry here) ----
 const TABLE_CONFIGS = [

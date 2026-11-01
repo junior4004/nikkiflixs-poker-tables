@@ -155,7 +155,7 @@ function registerAccountRoutes(app) {
   // CORS for the site (the client lives on nikkiflixs.com, the API on Render).
   app.use('/api', (req, res, next) => {
     const origin = req.headers.origin || '';
-    if (origin === 'https://nikkiflixs.com' || origin === 'https://www.nikkiflixs.com' || /^http:\/\/localhost(:\d+)?$/.test(origin)) {
+    if (origin === 'https://nikkiflixs.com' || origin === 'https://www.nikkiflixs.com' || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Vary', 'Origin');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
