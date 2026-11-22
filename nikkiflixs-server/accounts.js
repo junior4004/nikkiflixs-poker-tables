@@ -41,6 +41,7 @@ function loadStoreFile() {
 }
 
 let store = USE_PG ? { users: [], sessions: {} } : loadStoreFile();
+if (!Array.isArray(store.codes)) store.codes = []; // gift codes (admin tool)
 let dbReady = !USE_PG;
 let dbInitPromise = null;
 
@@ -53,6 +54,7 @@ function ensureReady() {
       const r = await pool.query("SELECT v FROM nf_kv WHERE k = 'accounts'");
       if (r.rows.length && r.rows[0].v && Array.isArray(r.rows[0].v.users) && r.rows[0].v.sessions) {
         store = r.rows[0].v;
+        if (!Array.isArray(store.codes)) store.codes = [];
       }
       dbReady = true;
       console.log('accounts: postgres store ready, users:', store.users.length);
@@ -210,6 +212,44 @@ function registerAccountRoutes(app) {
     res.json({ ...publicUser(u), token });
   });
 
+  /* ---------- admin password reset ----------
+     Jerry's Junior4004 account exists in the store (signup says "taken")
+     but the password on file does not match, and there is no reset path.
+     This endpoint lets an operator holding the dashboard-only reset key
+     set a new password for any account.
+     - The key is ADMIN_RESET_KEY (Render dashboard env var, never in code).
+       If it is unset, the endpoint is dead: every call gets 503.
+     - The key is compared in constant time; a wrong key gets 401.
+     - Rate-limited exactly like login (8 tries / minute per ip+username).
+     - The new password follows the signup rule (>= 6 chars).
+     - The user's role is refreshed from the current CREATOR_USERNAME env,
+       so a reset after CREATOR_USERNAME=junior4004 also restores creator.
+     - Only "password reset for <username>" is logged. The response never
+       contains a password or a hash. */
+  app.post('/api/admin/reset-password', async (req, res) => {
+    try { await ensureReady(); } catch (e) { return res.status(503).json({ error: 'Accounts are waking up — try again in a few seconds.' }); }
+    const { username, newPassword, resetKey } = req.body || {};
+    const key = (req.ip || '') + '|' + String(username || '').toLowerCase();
+    if (throttled(key)) return res.status(429).json({ error: 'Too many tries — wait a minute.' });
+    noteAttempt(key);
+    const configuredKey = process.env.ADMIN_RESET_KEY;
+    if (!configuredKey) return res.status(503).json({ error: 'Password reset is not configured on this server.' });
+    const supplied = String(resetKey || '');
+    const keyOk = supplied.length === configuredKey.length &&
+      crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(configuredKey));
+    if (!keyOk) return res.status(401).json({ error: 'Reset not allowed.' });
+    if (typeof newPassword !== 'string' || newPassword.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+    }
+    const u = findUser(username);
+    if (!u) return res.status(404).json({ error: 'No such account.' });
+    u.passHash = await hashPassword(newPassword);
+    u.role = u.nameLower === CREATOR_USERNAME ? 'creator' : 'player';
+    saveStore();
+    console.log('accounts: password reset for', u.username);
+    res.json({ ok: true, username: u.username });
+  });
+
   function bearer(req) {
     const h = req.headers.authorization || '';
     return h.startsWith('Bearer ') ? h.slice(7) : null;
@@ -227,6 +267,93 @@ function registerAccountRoutes(app) {
     const t = bearer(req);
     if (t) { delete store.sessions[tokenKey(t)]; saveStore(); }
     res.json({ ok: true });
+  });
+
+  /* ---------- server gift codes (admin tool, queue item 6) ----------
+     Honest codes: issued and redeemed on the server, never in client code.
+     - Only role 'creator' (server-side, from the session token) can issue.
+     - A code carries the EXACT coin amount the creator picks at issue time.
+     - One account cannot redeem the same code twice; a global maxRedemptions
+       cap and an optional expiry are enforced here, not on the device.
+     - These are a SEPARATE system from the legacy NF codes (client-side
+       checksum codes in the poker tables / coin store). Those are untouched
+       by these endpoints and keep their own per-device behavior. */
+  function codesList() {
+    if (!Array.isArray(store.codes)) store.codes = [];
+    return store.codes;
+  }
+  const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  function newGiftCode() {
+    for (let tries = 0; tries < 20; tries++) {
+      let rand = '';
+      for (let i = 0; i < 8; i++) rand += CODE_CHARS[crypto.randomInt(CODE_CHARS.length)];
+      const code = 'NFG-' + rand;
+      if (!codesList().some((c) => c.code === code)) return code;
+    }
+    return 'NFG-' + crypto.randomBytes(6).toString('hex').toUpperCase();
+  }
+
+  app.post('/api/admin/codes', async (req, res) => {
+    try { await ensureReady(); } catch (e) { return res.status(503).json({ error: 'Accounts are waking up — try again in a few seconds.' }); }
+    const u = userForToken(bearer(req));
+    if (!u) return res.status(401).json({ error: 'Not signed in.' });
+    if (u.role !== 'creator') return res.status(403).json({ error: 'Creator only.' });
+    const body = req.body || {};
+    const coins = Math.floor(Number(body.coins));
+    if (!Number.isFinite(coins) || coins < 1 || coins > 100000000) {
+      return res.status(400).json({ error: 'Coins must be a whole number from 1 to 100,000,000.' });
+    }
+    let maxRedemptions = body.maxRedemptions === undefined ? 1 : Math.floor(Number(body.maxRedemptions));
+    if (!Number.isFinite(maxRedemptions) || maxRedemptions < 1 || maxRedemptions > 1000) {
+      return res.status(400).json({ error: 'Uses must be a whole number from 1 to 1000.' });
+    }
+    let expiresAt = null;
+    if (body.expiresAt) {
+      const d = new Date(body.expiresAt);
+      if (isNaN(d.getTime())) return res.status(400).json({ error: 'Expiry must be a valid date.' });
+      expiresAt = d.toISOString();
+    }
+    const entry = { code: newGiftCode(), coins, createdBy: u.username, createdAt: new Date().toISOString(), expiresAt, maxRedemptions, redeemedBy: [] };
+    codesList().push(entry);
+    saveStore();
+    res.status(201).json({ code: entry.code, coins: entry.coins, maxRedemptions: entry.maxRedemptions, expiresAt: entry.expiresAt, createdAt: entry.createdAt });
+  });
+
+  app.get('/api/admin/codes', async (req, res) => {
+    try { await ensureReady(); } catch (e) { return res.status(503).json({ error: 'Accounts are waking up — try again in a few seconds.' }); }
+    const u = userForToken(bearer(req));
+    if (!u) return res.status(401).json({ error: 'Not signed in.' });
+    if (u.role !== 'creator') return res.status(403).json({ error: 'Creator only.' });
+    const mine = codesList().filter((c) => c.createdBy === u.username).slice().reverse().map((c) => ({
+      code: c.code, coins: c.coins, maxRedemptions: c.maxRedemptions,
+      redeemed: c.redeemedBy.length, redeemedBy: c.redeemedBy,
+      expiresAt: c.expiresAt, createdAt: c.createdAt,
+      status: (c.expiresAt && Date.now() > new Date(c.expiresAt).getTime()) ? 'expired' : (c.redeemedBy.length >= c.maxRedemptions ? 'used up' : 'active')
+    }));
+    res.json({ codes: mine });
+  });
+
+  app.post('/api/redeem-code', async (req, res) => {
+    try { await ensureReady(); } catch (e) { return res.status(503).json({ error: 'Accounts are waking up — try again in a few seconds.' }); }
+    const u = userForToken(bearer(req));
+    if (!u) return res.status(401).json({ error: 'Sign in first — server codes go to your account wallet.' });
+    const raw = String((req.body || {}).code || '').trim().toUpperCase();
+    const entry = codesList().find((c) => c.code === raw);
+    if (!entry) return res.status(404).json({ error: 'That code does not check out — type it exactly as given.' });
+    if (entry.expiresAt && Date.now() > new Date(entry.expiresAt).getTime()) {
+      return res.status(410).json({ error: 'That code has expired.' });
+    }
+    if (entry.redeemedBy.includes(u.username)) {
+      return res.status(409).json({ error: 'You already redeemed that code.' });
+    }
+    if (entry.redeemedBy.length >= entry.maxRedemptions) {
+      return res.status(409).json({ error: 'That code has already been fully redeemed.' });
+    }
+    entry.redeemedBy.push(u.username);
+    if (!u.wallet || typeof u.wallet.bankroll !== 'number') u.wallet = { bankroll: 0, popsTaunt: 0, popsMad: 0, diceSets: [], gifts: {} };
+    u.wallet.bankroll += entry.coins;
+    saveStore();
+    res.json({ ok: true, coins: entry.coins, bankroll: u.wallet.bankroll });
   });
 
   app.get('/api/accounts/health', async (req, res) => {

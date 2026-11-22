@@ -62,7 +62,7 @@ async function main() {
   socket.emit('join', { table: 'red', v: 1, name: 'JerryTest', buyIn: 1000, seat: -1 });
   await sleep(3000);
 
-  check('joined event has a real seat', Number.isInteger(J.seat) && J.seat >= 0 && J.seat < 6, 'seat=' + J.seat);
+  check('joined event has a real seat', Number.isInteger(J.seat) && J.seat >= 0 && J.seat < 8, 'seat=' + J.seat);
 
   // desync self-heal data: spectator probe saw yourSeat=-1; our joined
   // states must report yourSeat === our seat on every update.

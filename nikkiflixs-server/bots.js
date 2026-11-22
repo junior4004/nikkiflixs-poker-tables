@@ -53,6 +53,16 @@ const BOT_NAMES = [
   'Ruth A.', 'Max D.', 'Sara J.', 'Victor L.', 'Amy C.', 'Raj P.',
 ];
 
+// Promise never leaves a poker table (Jerry's standing rule). Her seat is
+// hers even at zero coins, so the zero-coin removal in reconcile() must
+// never touch a player named Promise — she keeps the old rebuy-in-place
+// behavior. There is no Promise in BOT_NAMES and no server-side Promise
+// special-case anywhere else; this guard is purely defensive, keyed on
+// the display name (first name "Promise", e.g. "Promise" or "Promise R.").
+function isPromiseName(name) {
+  return String(name || '').split(/[ .]/)[0].toLowerCase() === 'promise';
+}
+
 // ---------------------------------------------------------------------------
 // Bot brain: tight-aggressive baseline.
 //   - Premium hands -> bet/raise for value (pot-fraction sizing).
@@ -182,6 +192,30 @@ function decideAction(engine, token, rng = Math.random) {
     return { action: 'fold' };
   }
 
+  // Facing a shove: the cheap-price cap in the medium branch below can
+  // never be met by an all-in (a 1000 shove into a 9 pot is always "too
+  // expensive"), so judge by hand quality against the pot odds instead.
+  // Detected two ways, both observable from engine state alone:
+  //   - some other live player is all-in for exactly the current bet, or
+  //   - the call would cost this bot its whole remaining stack.
+  // Break-even equity of the call is toCall / (pot + toCall); require the
+  // bot's strength to clear it by a 0.12 margin, floored at 0.58 (so weak
+  // hands and bare draws never call a shove) and capped at 0.72 (premium
+  // already handled above). Below the line, fall through: medium/weak
+  // rules fold a bet this big, exactly as before.
+  const facingAllIn = [...engine.players.values()].some(
+    (q) => q.token !== token && q.allIn && !q.folded && q.betStreet > 0
+      && q.betStreet >= engine.currentBet
+  );
+  const callingCostsAll = toCall > 0 && toCall >= p.stack;
+  if (toCall > 0 && (facingAllIn || callingCostsAll)) {
+    const breakEven = toCall / (engine.potTotal + toCall);
+    const shoveCallAt = Math.min(0.72, Math.max(0.58, breakEven + 0.12)) - loosen;
+    if (strength >= shoveCallAt && legal.includes('call')) {
+      return { action: 'call' };
+    }
+  }
+
   // medium: call at a fair price, never chase bad odds
   if (strength >= 0.45 - loosen) {
     if (toCall === 0) {
@@ -259,16 +293,36 @@ class BotManager {
     // forget tokens for players already gone (defensive; stays consistent)
     for (const t of [...bt]) if (!eng.players.has(t)) bt.delete(t);
 
-    // Starvation guard: a broke bot (stack 0, sitting out) can never rejoin
-    // on its own — startHand only unsits funded players — so without this a
-    // bot-only table eventually parks in `waiting` forever and no more hands
-    // are dealt. Rebuy it in place: same seat, same name, fresh starting
-    // stack. Invisible to everyone (play chips only), and the table can
-    // never permanently stall. Humans are never touched here.
-    for (const [token, p] of eng.players) {
-      if (bt.has(token) && p.stack <= 0 && p.sittingOut) {
+    // Zero-coin rule (Jerry): a player with zero coins GETS OUT — the seat
+    // empties and somebody else comes in and takes it. A broke player
+    // (stack 0, sitting out) can never rejoin on its own — startHand only
+    // unsits funded players — so without removal a bot-only table parks in
+    // `waiting` forever and no more hands are dealt. Remove broke bots
+    // outright; the top-up below seats a NEW bot (new name, fresh stack)
+    // in the freed seat, so the table can never stall. Broke humans are
+    // removed too, but ONLY between hands (state 'waiting') — never
+    // mid-hand. Their socket stays attached, so they keep watching and can
+    // SIT IN fresh with the same token (join treats a token that is no
+    // longer seated as new). An all-in player is never touched: all-in
+    // means stack 0 but NOT sittingOut, so the guard below skips them.
+    // Promise never leaves: she keeps the old rebuy-in-place behavior.
+    const removedNames = new Set();
+    for (const [token, p] of [...eng.players]) {
+      if (p.stack > 0 || !p.sittingOut) continue;
+      if (isPromiseName(p.name)) {
         p.stack = eng.startingStack;
         p.sittingOut = false;
+        continue;
+      }
+      if (bt.has(token)) {
+        // Broke bot: out. Sitting out, so not in the hand; removePlayer is
+        // mid-hand safe and the top-up below refills the seat.
+        removedNames.add(p.name);
+        this.removeBot(tableId, token);
+      } else if (eng.state === 'waiting') {
+        // Broke human, between hands: out. Socket stays attached.
+        removedNames.add(p.name);
+        eng.removePlayer(token);
       }
     }
 
@@ -282,9 +336,10 @@ class BotManager {
       this.removeBot(tableId, victim);
       bots--;
     }
-    // top up
+    // top up (a name just removed this pass is excluded, so the seat is
+    // taken by somebody else, not the same name back again)
     while (bots < target) {
-      if (!this.addBot(tableId)) break;
+      if (!this.addBot(tableId, removedNames)) break;
       bots++;
     }
   }
@@ -310,14 +365,16 @@ class BotManager {
     return botPlayers[0].token;
   }
 
-  addBot(tableId) {
+  // excludeNames: names just removed this reconcile pass (zero-coin rule) —
+  // the replacement must be somebody else, not the same name back again.
+  addBot(tableId, excludeNames) {
     const room = this.rooms.getTable(tableId);
     if (!room) return false;
     const eng = room.engine;
     const bt = this.tokensFor(tableId);
     // unique name per table
     const used = new Set([...eng.players.values()].map(p => p.name));
-    const pool = BOT_NAMES.filter(n => !used.has(n));
+    const pool = BOT_NAMES.filter(n => !used.has(n) && !(excludeNames && excludeNames.has(n)));
     if (!pool.length) return false;
     const name = pool[Math.floor(Math.random() * pool.length)];
     const token = randomUUID(); // UUID, exactly like a human token
@@ -346,7 +403,7 @@ class BotManager {
   // Seat a human with yield fallback. Returns seat index, or -1 when the
   // table is genuinely full of humans (caller sends a clean table-full error).
   // wantSeat: the chair the human tapped. A bot sitting there yields it.
-  seatHuman(tableId, token, name, buyIn, wantSeat) {
+  seatHuman(tableId, token, name, buyIn, wantSeat, avatarKey) {
     const room = this.rooms.getTable(tableId);
     if (!room) return -1;
     const eng = room.engine;
@@ -354,10 +411,10 @@ class BotManager {
       const occupant = eng.seats[wantSeat];
       if (occupant && this.isBot(tableId, occupant)) this.removeBot(tableId, occupant);
     }
-    let seat = eng.addPlayer(token, name, buyIn, wantSeat);
+    let seat = eng.addPlayer(token, name, buyIn, wantSeat, avatarKey);
     if (seat >= 0) return seat;
     if (!this.yieldForHuman(tableId)) return -1;
-    return eng.addPlayer(token, name, buyIn, wantSeat);
+    return eng.addPlayer(token, name, buyIn, wantSeat, avatarKey);
   }
 
   // One bot action per call (called on a timer; pacing looks human).

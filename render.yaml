@@ -22,6 +22,20 @@ services:
     buildCommand: npm install --omit=dev
     startCommand: npm start
     healthCheckPath: /api/health
+    # --- Account env vars (set in the Render DASHBOARD, never in this file) ---
+    # CREATOR_USERNAME=junior4004
+    #   The account with this username gets role 'creator' (admin) on the
+    #   server. Live is still the default 'thecreator', so Junior4004 logs
+    #   in as a plain player even after a password reset. Set it to
+    #   junior4004, then Manual Deploy.
+    # ADMIN_RESET_KEY=<a fresh random string, e.g. openssl rand -hex 16>
+    #   Unlocks POST /api/admin/reset-password (accounts.js). Without it
+    #   the endpoint always answers 503. It is a dashboard-only secret:
+    #   never commit a value here, never put it in chat, rotate it after
+    #   each use if it is ever shared. The reset call itself is a one-off
+    #   curl from a trusted machine, not a client feature.
+    # NOTE: auto-deploy is OFF for this service — pushing to the repo does
+    # nothing live until Manual Deploy is clicked in the dashboard.
     envVars:
       - key: NODE_VERSION
         value: "20"

@@ -37,7 +37,7 @@ class PokerEngine {
   }
 
   // ---------- player management ----------
-  addPlayer(token, name, buyIn, wantSeat) {
+  addPlayer(token, name, buyIn, wantSeat, avatarKey) {
     if (this.players.has(token)) return this.seats.indexOf(token);
     if (this.seats.every(s => s !== null)) return -1; // full
     // Honor a tapped chair when it's free; otherwise first free seat.
@@ -51,6 +51,7 @@ class PokerEngine {
     this.players.set(token, {
       token,
       name: name || 'Player',
+      avatarKey: (typeof avatarKey === 'string' && /^avatar-\d{1,2}$/.test(avatarKey)) ? avatarKey : '',
       seat,
       stack,
       hole: [],
@@ -446,6 +447,7 @@ class PokerEngine {
       return {
         seat: i,
         name: pl.name,
+        avatarKey: pl.avatarKey || '',
         stack: pl.stack,
         bet: pl.betStreet,
         folded: pl.folded,

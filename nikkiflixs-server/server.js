@@ -196,7 +196,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('join', (msg = {}) => {
-    // msg: { table, token, v, name, buyIn, seat }
+    // msg: { table, token, v, name, buyIn, seat, avatarKey }
     if (msg.v !== PROTOCOL_V) {
       socket.emit('error', { code: 'stale-client', msg: 'Please refresh — poker client out of date.' });
       return;
@@ -210,6 +210,7 @@ io.on('connection', (socket) => {
     tableId = msg.table;
     token = msg.token || rooms.newToken();
 
+    const avatarKey = (typeof msg.avatarKey === 'string' && /^avatar-\d{1,2}$/.test(msg.avatarKey)) ? msg.avatarKey : '';
     const isNew = !room.engine.players.has(token);
     let joinedSeat = -1;
     if (isNew) {
@@ -219,7 +220,7 @@ io.on('connection', (socket) => {
       // A tapped chair (msg.seat) is honored when a bot holds it.
       // The seat seatHuman returns is AUTHORITATIVE — it is what 'joined'
       // reports back, never a second lookup that could disagree.
-      joinedSeat = bots.seatHuman(tableId, token, msg.name || 'Player', msg.buyIn, msg.seat);
+      joinedSeat = bots.seatHuman(tableId, token, msg.name || 'Player', msg.buyIn, msg.seat, avatarKey);
       if (joinedSeat < 0) {
         socket.emit('error', { code: 'table-full', msg: 'Table is full. Try another table.' });
         tableId = null; token = null;
@@ -228,6 +229,8 @@ io.on('connection', (socket) => {
     } else {
       const jp0 = room.engine.players.get(token);
       joinedSeat = jp0 ? jp0.seat : -1;
+      // A returning player may have picked a new avatar since first join.
+      if (avatarKey && jp0) jp0.avatarKey = avatarKey;
     }
     rooms.attach(tableId, token, socket.id);
     socket.join(tableId);
